@@ -155,7 +155,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
                 e.stopPropagation();
                 if (hasUrl) {
                   const finalUrl = url.startsWith('http') ? url : `https://${url}`;
-                  window.open(finalUrl, '_blank', 'noopener,noreferrer');
+                  const newWindow = window.open(finalUrl, '_blank', 'noopener,noreferrer');
+                  if (newWindow) {
+                    window.focus();
+                  }
                 }
               };
 
@@ -182,7 +185,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
                 e.stopPropagation();
                 if (hasUrl) {
                   const finalUrl = url.startsWith('http') ? url : `https://${url}`;
-                  window.open(finalUrl, '_blank', 'noopener,noreferrer');
+                  const newWindow = window.open(finalUrl, '_blank', 'noopener,noreferrer');
+                  if (newWindow) {
+                    window.focus();
+                  }
                 }
               };
 

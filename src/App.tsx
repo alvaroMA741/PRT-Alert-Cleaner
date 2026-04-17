@@ -766,12 +766,12 @@ export default function App() {
   };
 
   const handleCopy = (text: string, id: string) => {
-    if (copiedId === id) {
-      setCopiedId(null);
-    } else {
-      navigator.clipboard.writeText(text);
-      setCopiedId(id);
-    }
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    // Auto-reset checkmark after 2 seconds to allow re-copying without double click
+    setTimeout(() => {
+      setCopiedId(prev => prev === id ? null : prev);
+    }, 2000);
   };
 
   const handleCopyDomainKWs = (domain: string, domainAlerts: PRTAlert[]) => {
