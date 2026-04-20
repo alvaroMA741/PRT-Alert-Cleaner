@@ -62,14 +62,21 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
-  const parseRank = (val: number | string | undefined): number | null => {
-    if (val === undefined || val === null || val === '—' || val === '-') return null;
-    if (typeof val === 'string') {
-      if (val.includes('>') || val.includes('+')) return 101;
-      const n = parseInt(val, 10);
-      return isNaN(n) ? null : n;
-    }
-    return val;
+  const toScaledRank = (rank: number): number => {
+    if (rank <= 1) return 0;
+    if (rank <= 20) return ((rank - 1) / 19) * 35;
+    if (rank <= 50) return 35 + ((rank - 20) / 30) * 35;
+    if (rank >= 101) return 100;
+    return 70 + ((rank - 50) / 51) * 30;
+  };
+
+  const fromScaledRank = (scaledValue: number): string => {
+    if (scaledValue <= 0) return '1';
+    if (Math.abs(scaledValue - toScaledRank(10)) < 0.5) return '10';
+    if (Math.abs(scaledValue - 35) < 0.5) return '20';
+    if (Math.abs(scaledValue - 70) < 0.5) return '50';
+    if (Math.abs(scaledValue - 100) < 0.5) return '100';
+    return '';
   };
 
   // Use ONLY real history data if available
@@ -79,9 +86,12 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
     // Highlight if URL changed since previous recorded point
     const urlChanged = i > 0 && currentUrl && prevUrl && currentUrl !== prevUrl;
 
+    const originalRank = h.rank === 'NTH' ? 101 : parseInt(h.rank.toString(), 10);
+
     return { 
       name: h.date, 
-      rank: h.rank === 'NTH' ? 101 : parseInt(h.rank.toString(), 10), 
+      rank: originalRank,
+      scaledRank: toScaledRank(originalRank),
       url: currentUrl,
       urlChanged
     };
@@ -102,8 +112,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
     );
   }
 
-  const maxRank = Math.max(...chartData.map(d => d.rank));
-  const yDomain = [1, Math.max(10, maxRank + 2)];
+  const yTicks = [0, toScaledRank(10), 35, 70, 100];
 
   return (
     <div className="w-full h-72 mt-6">
@@ -129,7 +138,9 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
           />
           <YAxis 
             reversed 
-            domain={yDomain}
+            domain={[0, 100]}
+            ticks={yTicks}
+            tickFormatter={fromScaledRank}
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 500 }}
@@ -138,10 +149,10 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
             content={<CustomTooltip />}
             cursor={{ stroke: '#10b981', strokeWidth: 1, strokeDasharray: '4 4' }}
           />
-          <ReferenceLine y={10} stroke="#fecaca" strokeDasharray="3 3" label={{ position: 'right', value: 'Top 10', fill: '#f87171', fontSize: 10 }} />
+          <ReferenceLine y={toScaledRank(10)} stroke="#fecaca" strokeDasharray="3 3" label={{ position: 'right', value: 'Top 10', fill: '#f87171', fontSize: 10 }} />
           <Area 
             type="monotone" 
-            dataKey="rank" 
+            dataKey="scaledRank" 
             stroke="#10b981" 
             strokeWidth={3}
             fillOpacity={1} 
