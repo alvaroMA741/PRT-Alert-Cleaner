@@ -115,7 +115,7 @@ export const HistoryChart: React.FC<HistoryChartProps> = ({ alert }) => {
   const yTicks = [0, toScaledRank(10), 35, 70, 100];
 
   return (
-    <div className="w-full h-72 mt-6">
+    <div className="w-full h-56 mt-4">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart 
           data={chartData} 

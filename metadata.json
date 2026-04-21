@@ -1,6 +1,6 @@
 {
-  "name": "Remix: PRT Alert Cleaner v.2.3 DESARROLLO - evolución diaria",
-  "description": "Automatiza el cotejo de alertas de Pro Rank Tracker con la posición real actual para limpiar avisos falsos o recuperados.",
+  "name": "PRT Alert Cleaner v.2.3 DESARROLLO - evolución diaria + KWs asociadas",
+  "description": "Automatiza el cotejo de alertas de Pro Rank Tracker con la posición real actual para limpiar avisos falsos o recuperados.\n\nAñadida gráfica de evolución diaria con URLs clicables.\n\nAñadida funcionalidad de otras KWs posicionadas en la misma URL.",
   "requestFramePermissions": [],
   "C7": [],
   "Xp": [],

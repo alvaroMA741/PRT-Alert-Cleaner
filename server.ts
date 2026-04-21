@@ -211,6 +211,80 @@ async function startServer() {
     }
   });
 
+  app.post('/api/prt/url-keywords', async (req, res) => {
+    const { apiKey, urlId, targetUrl } = req.body;
+
+    if (!apiKey || !urlId) {
+      return res.status(400).json({ error: 'API key and urlId are required' });
+    }
+
+    const normalizeUrl = (u: string) => {
+      if (!u) return '';
+      return u.toLowerCase()
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .replace(/\/$/, '')
+        .trim();
+    };
+
+    const normTarget = normalizeUrl(targetUrl);
+
+    try {
+      const headers = {
+        'X-TOKEN': apiKey.trim(),
+        'Accept': 'application/json'
+      };
+
+      const url = `https://api.proranktracker.com/v3/urls/${urlId}`;
+      const resU = await axios.get(url, { headers });
+      
+      if (resU.data?.result !== 'error' && resU.data?.data) {
+        const urlData = resU.data.data;
+        const baseUrl = urlData.url || '';
+        const terms = Array.isArray(urlData.terms) ? urlData.terms : (urlData.url_terms || []);
+        
+        const filteredTerms = terms.filter((t: any) => {
+          const rawRank = t.rankings?.google?.day ?? t.rank ?? t.position ?? t.yesterdayrank ?? 'NTH';
+          let rank = 101;
+          if (rawRank !== 'NTH' && rawRank !== null && rawRank !== undefined) {
+             rank = parseInt(rawRank.toString(), 10);
+             if (isNaN(rank)) rank = 101;
+          }
+
+          // Si el rank es 101 (>100), PRT no asocia una URL real, por lo que las ignoramos
+          if (rank >= 101) return false;
+
+          // Si no hay matchedurl, PRT a veces devuelve la URL base del dominio por defecto, 
+          // lo cual falsea la asociación. Solo aceptamos términos con una URL de destino explícita.
+          if (!t.matchedurl) return false;
+
+          return normalizeUrl(t.matchedurl) === normTarget;
+        });
+
+        const mappedTerms = filteredTerms.map((t: any) => {
+          const rawRank = t.rankings?.google?.day ?? t.rank ?? t.position ?? t.yesterdayrank ?? 'NTH';
+          let rank = 101;
+          if (rawRank !== 'NTH' && rawRank !== null && rawRank !== undefined) {
+             rank = parseInt(rawRank.toString(), 10);
+             if (isNaN(rank)) rank = 101;
+          }
+          
+          return {
+            keyword: t.term || t.name || t.keyword || '',
+            rank: rank
+          };
+        });
+        
+        res.json({ data: mappedTerms });
+      } else {
+        res.json({ data: [] });
+      }
+    } catch (error: any) {
+      console.error('[PRT URL Keywords] Fatal Error:', error.response?.data || error.message);
+      res.status(error.response?.status || 500).json({ error: 'Failed to fetch URL keywords' });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

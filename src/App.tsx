@@ -55,6 +55,9 @@ export default function App() {
   const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(new Set());
   const [selectedAlertForHistory, setSelectedAlertForHistory] = useState<PRTAlert | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [urlKeywords, setUrlKeywords] = useState<{ keyword: string; rank: number | string }[]>([]);
+  const [isLoadingUrlKeywords, setIsLoadingUrlKeywords] = useState(false);
+  const [showUrlKeywords, setShowUrlKeywords] = useState(false);
   const fileInputReplaceRef = useRef<HTMLInputElement>(null);
   const fileInputAppendRef = useRef<HTMLInputElement>(null);
 
@@ -785,8 +788,36 @@ export default function App() {
     setAlerts([]);
   };
 
+  const fetchUrlKeywords = async (urlId: string | number, currentUrl?: string) => {
+    if (!apiKey || !urlId) return;
+    
+    setIsLoadingUrlKeywords(true);
+    setUrlKeywords([]);
+    try {
+      const response = await axios.post('/api/prt/url-keywords', { 
+        apiKey, 
+        urlId,
+        targetUrl: currentUrl
+      });
+      setUrlKeywords(response.data?.data || []);
+    } catch (error) {
+      console.error("Failed to fetch URL keywords", error);
+    } finally {
+      setIsLoadingUrlKeywords(false);
+    }
+  };
+
   const fetchHistory = async (prtAlert: PRTAlert, range: number = 30) => {
-    const { urlTermId, urlId, status } = prtAlert;
+    const { urlTermId, urlId, status, url } = prtAlert;
+    
+    // Reset keywords state
+    setUrlKeywords([]);
+    setShowUrlKeywords(false);
+    
+    // Fetch URL Keywords if urlId exists
+    if (urlId) {
+      fetchUrlKeywords(urlId, url);
+    }
     
     // Performance optimization as requested: only fetch for KWs still out of Top 10/100
     const isOut = status === 'still-down-top10' || status === 'still-down-top100';
@@ -1301,46 +1332,46 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-3xl bg-white rounded-[32px] shadow-2xl overflow-hidden border border-zinc-200"
+              className="relative w-full max-w-3xl max-h-[90vh] bg-white rounded-[32px] shadow-2xl border border-zinc-200 flex flex-col overflow-hidden"
             >
-              <div className="p-8 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
+              <div className="p-6 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50 shrink-0">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200">
-                    <BarChart3 className="text-white w-6 h-6" />
+                  <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200">
+                    <BarChart3 className="text-white w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-zinc-900 tracking-tight">{selectedAlertForHistory.keyword}</h3>
+                    <h3 className="text-lg font-black text-zinc-900 tracking-tight">{selectedAlertForHistory.keyword}</h3>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Dominio</span>
-                      <p className="text-xs text-zinc-500 font-bold truncate max-w-[400px]">{selectedAlertForHistory.domain}</p>
+                      <span className="text-[9px] bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Dominio</span>
+                      <p className="text-[11px] text-zinc-500 font-bold truncate max-w-[300px] sm:max-w-[400px]">{selectedAlertForHistory.domain}</p>
                     </div>
                   </div>
                 </div>
                 <button 
                   onClick={() => setSelectedAlertForHistory(null)}
-                  className="p-2 hover:bg-white rounded-2xl transition-colors text-zinc-400 hover:text-rose-500 border border-transparent hover:border-zinc-200"
+                  className="p-1.5 hover:bg-white rounded-2xl transition-colors text-zinc-400 hover:text-rose-500 border border-transparent hover:border-zinc-200"
                 >
-                  <XCircle className="w-8 h-8" />
+                  <XCircle className="w-7 h-7" />
                 </button>
               </div>
               
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex gap-6">
-                    <div className="bg-zinc-50 px-6 py-3 rounded-[24px] border border-zinc-100 shadow-sm">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-zinc-400 mb-1">Ranking Alerta</p>
+              <div className="p-6 overflow-y-auto custom-scrollbar">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex gap-4">
+                    <div className="bg-zinc-50 px-4 py-2 rounded-[20px] border border-zinc-100 shadow-sm">
+                      <p className="text-[9px] uppercase tracking-widest font-black text-zinc-400 mb-1">Ranking Alerta</p>
                       <div className="flex items-baseline gap-1">
-                        <p className="text-3xl font-black text-zinc-900">{selectedAlertForHistory.alertPosition}</p>
-                        <span className="text-[10px] text-zinc-400 font-bold">POS</span>
+                        <p className="text-2xl font-black text-zinc-900">{selectedAlertForHistory.alertPosition}</p>
+                        <span className="text-[9px] text-zinc-400 font-bold">POS</span>
                       </div>
                     </div>
-                    <div className="bg-emerald-50 px-6 py-3 rounded-[24px] border border-emerald-100 shadow-sm">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-emerald-600 mb-1">Ranking Actual</p>
+                    <div className="bg-emerald-50 px-4 py-2 rounded-[20px] border border-emerald-100 shadow-sm">
+                      <p className="text-[9px] uppercase tracking-widest font-black text-emerald-600 mb-1">Ranking Actual</p>
                       <div className="flex items-baseline gap-1">
-                        <p className="text-3xl font-black text-emerald-700">
+                        <p className="text-2xl font-black text-emerald-700">
                           {selectedAlertForHistory.currentPosition === 101 ? '>100' : (selectedAlertForHistory.currentPosition || '—')}
                         </p>
-                        <span className="text-[10px] text-emerald-600 font-bold">POS</span>
+                        <span className="text-[9px] text-emerald-600 font-bold">POS</span>
                       </div>
                     </div>
                   </div>
@@ -1376,39 +1407,93 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bg-zinc-50/50 rounded-[32px] p-6 border border-zinc-100">
+                <div className="bg-zinc-50/50 rounded-[24px] p-4 border border-zinc-100">
                   <HistoryChart alert={selectedAlertForHistory} />
                 </div>
                 
-                <div className="mt-8 grid grid-cols-3 gap-4">
-                  <div className="group p-4 bg-white rounded-[24px] border border-zinc-100 shadow-sm hover:border-emerald-200 transition-all">
-                    <p className="text-[10px] uppercase tracking-widest font-black text-zinc-400 mb-1 group-hover:text-emerald-600 transition-colors">Día</p>
-                    <p className="text-lg font-black text-zinc-900">{selectedAlertForHistory.day || '—'}</p>
+                <div className="mt-4 grid grid-cols-3 gap-3">
+                  <div className="group p-3 bg-white rounded-[20px] border border-zinc-100 shadow-sm hover:border-emerald-200 transition-all">
+                    <p className="text-[9px] uppercase tracking-widest font-black text-zinc-400 mb-0.5 group-hover:text-emerald-600 transition-colors">Día</p>
+                    <p className="text-base font-black text-zinc-900">{selectedAlertForHistory.day || '—'}</p>
                   </div>
-                  <div className="group p-4 bg-white rounded-[24px] border border-zinc-100 shadow-sm hover:border-emerald-200 transition-all">
-                    <p className="text-[10px] uppercase tracking-widest font-black text-zinc-400 mb-1 group-hover:text-emerald-600 transition-colors">Semana</p>
-                    <p className="text-lg font-black text-zinc-900">{selectedAlertForHistory.week || '—'}</p>
+                  <div className="group p-3 bg-white rounded-[20px] border border-zinc-100 shadow-sm hover:border-emerald-200 transition-all">
+                    <p className="text-[9px] uppercase tracking-widest font-black text-zinc-400 mb-0.5 group-hover:text-emerald-600 transition-colors">Semana</p>
+                    <p className="text-base font-black text-zinc-900">{selectedAlertForHistory.week || '—'}</p>
                   </div>
-                  <div className="group p-4 bg-white rounded-[24px] border border-zinc-100 shadow-sm hover:border-emerald-200 transition-all">
-                    <p className="text-[10px] uppercase tracking-widest font-black text-zinc-400 mb-1 group-hover:text-emerald-600 transition-colors">Mes</p>
-                    <p className="text-lg font-black text-zinc-900">{selectedAlertForHistory.month || '—'}</p>
+                  <div className="group p-3 bg-white rounded-[20px] border border-zinc-100 shadow-sm hover:border-emerald-200 transition-all">
+                    <p className="text-[9px] uppercase tracking-widest font-black text-zinc-400 mb-0.5 group-hover:text-emerald-600 transition-colors">Mes</p>
+                    <p className="text-base font-black text-zinc-900">{selectedAlertForHistory.month || '—'}</p>
                   </div>
                 </div>
 
                 {selectedAlertForHistory.url && (
-                  <div className="mt-6 p-5 bg-zinc-900 rounded-[24px] border border-zinc-800 shadow-xl">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-[10px] uppercase tracking-widest font-black text-zinc-500">URL Actual Indexada</p>
-                      <ExternalLink className="w-3 h-3 text-zinc-500" />
+                  <div className="mt-4 p-4 bg-zinc-900 rounded-[20px] border border-zinc-800 shadow-xl">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[9px] uppercase tracking-widest font-black text-zinc-500">URL Actual Indexada</p>
+                      <ExternalLink className="w-2.5 h-2.5 text-zinc-500" />
                     </div>
                     <a 
                       href={selectedAlertForHistory.url.startsWith('http') ? selectedAlertForHistory.url : `https://${selectedAlertForHistory.url}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-emerald-400 hover:text-emerald-300 break-all font-bold transition-colors"
+                      className="text-[13px] text-emerald-400 hover:text-emerald-300 break-all font-bold transition-colors"
                     >
                       {selectedAlertForHistory.url}
                     </a>
+
+                    <div className="mt-3 pt-3 border-t border-zinc-800">
+                      <button 
+                        onClick={() => setShowUrlKeywords(!showUrlKeywords)}
+                        className="flex items-center justify-between w-full group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <p className="text-[10px] uppercase tracking-widest font-black text-zinc-500 group-hover:text-emerald-400 transition-colors">Otras KWs</p>
+                          {isLoadingUrlKeywords && <Loader2 className="w-3 h-3 text-emerald-500 animate-spin" />}
+                          {!isLoadingUrlKeywords && urlKeywords.length > 0 && (
+                            <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded-full font-bold">
+                              {urlKeywords.length}
+                            </span>
+                          )}
+                        </div>
+                        {!isLoadingUrlKeywords && (
+                          showUrlKeywords ? <ChevronDown className="w-3 h-3 text-zinc-500" /> : <ChevronRight className="w-3 h-3 text-zinc-500" />
+                        )}
+                      </button>
+
+                      <AnimatePresence>
+                        {showUrlKeywords && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="overflow-hidden"
+                          >
+                            {urlKeywords.length > 0 ? (
+                              <div className="mt-4 grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                                {urlKeywords.map((kw, idx) => (
+                                  <div 
+                                    key={idx} 
+                                    className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 hover:bg-zinc-800 transition-colors"
+                                  >
+                                    <span className="text-[11px] text-zinc-300 font-medium truncate pr-4">{kw.keyword}</span>
+                                    <span className={cn(
+                                      "text-[10px] font-black shrink-0 px-2 py-0.5 rounded-md",
+                                      typeof kw.rank === 'number' && kw.rank <= 10 
+                                        ? "bg-emerald-500/20 text-emerald-400" 
+                                        : "bg-zinc-700 text-zinc-400"
+                                    )}>
+                                      {kw.rank === 101 ? '>100' : kw.rank}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : !isLoadingUrlKeywords ? (
+                              <p className="mt-4 text-[10px] text-zinc-600 italic">No se han encontrado otras keywords posicionando en esta URL.</p>
+                            ) : null}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
                   </div>
                 )}
               </div>
