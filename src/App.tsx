@@ -1120,7 +1120,9 @@ export default function App() {
                         </td>
                       </tr>
                     ) : (
-                      (Object.entries(groupedAlerts) as [string, PRTAlert[]][]).map(([domain, domainAlerts]) => {
+                      (Object.entries(groupedAlerts) as [string, PRTAlert[]][])
+                        .sort(([a], [b]) => a.localeCompare(b))
+                        .map(([domain, domainAlerts]) => {
                         const isDomainHighlighted = domainAlerts.some(alert => alert.id === copiedId) || copiedDomain === domain;
                         
                         return (
