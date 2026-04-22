@@ -43,6 +43,13 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const normalizeString = (str: string) => {
+  if (!str) return "";
+  return str.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
+    .replace(/[^a-z0-9]/g, ""); // remove spaces and special chars
+};
+
 export default function App() {
   const [apiKey, setApiKey] = useState<string>(() => localStorage.getItem('prt_api_key') || '');
   const [alerts, setAlerts] = useState<PRTAlert[]>([]);
@@ -55,7 +62,7 @@ export default function App() {
   const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(new Set());
   const [selectedAlertForHistory, setSelectedAlertForHistory] = useState<PRTAlert | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [urlKeywords, setUrlKeywords] = useState<{ keyword: string; rank: number | string }[]>([]);
+  const [urlKeywords, setUrlKeywords] = useState<{ keyword: string; rank: number | string; combinacion?: string }[]>([]);
   const [isLoadingUrlKeywords, setIsLoadingUrlKeywords] = useState(false);
   const [showUrlKeywords, setShowUrlKeywords] = useState(false);
   const fileInputReplaceRef = useRef<HTMLInputElement>(null);
@@ -622,12 +629,6 @@ export default function App() {
         alert("No se han encontrado datos en tu cuenta de PRT. Asegúrate de tener keywords activas y que tu API Key sea correcta.");
       }
 
-      const normalizeString = (str: string) => {
-        return str.toLowerCase()
-          .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
-          .replace(/[^a-z0-9]/g, ""); // remove spaces and special chars
-      };
-
       let matchCount = 0;
       setAlerts(prev => prev.map(alert => {
         // Find match by domain and keyword
@@ -676,6 +677,7 @@ export default function App() {
               status: newStatus,
               lastChecked: new Date(),
               url: match.matched_url || match.url || alert.url,
+              combinacion: match.combinacion || match.string || match.location || match.engine || '',
               urlTermId: match.url_term_id || match.id || match.term_id,
               urlId: match.url_id
             };
@@ -1341,9 +1343,17 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-zinc-900 tracking-tight">{selectedAlertForHistory.keyword}</h3>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[9px] bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Dominio</span>
-                      <p className="text-[11px] text-zinc-500 font-bold truncate max-w-[300px] sm:max-w-[400px]">{selectedAlertForHistory.domain}</p>
+                    <div className="flex flex-col gap-1 mt-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0">Dominio</span>
+                        <p className="text-[11px] text-zinc-500 font-bold truncate max-w-[300px] sm:max-w-[400px]">{selectedAlertForHistory.domain}</p>
+                      </div>
+                      {selectedAlertForHistory.combinacion && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0">Localización</span>
+                          <p className="text-[11px] text-emerald-600 font-bold truncate max-w-[300px] sm:max-w-[400px]">{selectedAlertForHistory.combinacion}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1449,9 +1459,9 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <p className="text-[10px] uppercase tracking-widest font-black text-zinc-500 group-hover:text-emerald-400 transition-colors">Otras KWs</p>
                           {isLoadingUrlKeywords && <Loader2 className="w-3 h-3 text-emerald-500 animate-spin" />}
-                          {!isLoadingUrlKeywords && urlKeywords.length > 0 && (
+                          {!isLoadingUrlKeywords && urlKeywords.filter(kw => normalizeString(kw.keyword) !== normalizeString(selectedAlertForHistory.keyword)).length > 0 && (
                             <span className="text-[9px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded-full font-bold">
-                              {urlKeywords.length}
+                              {urlKeywords.filter(kw => normalizeString(kw.keyword) !== normalizeString(selectedAlertForHistory.keyword)).length}
                             </span>
                           )}
                         </div>
@@ -1470,22 +1480,29 @@ export default function App() {
                           >
                             {urlKeywords.length > 0 ? (
                               <div className="mt-4 grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                                {urlKeywords.map((kw, idx) => (
-                                  <div 
-                                    key={idx} 
-                                    className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 hover:bg-zinc-800 transition-colors"
-                                  >
-                                    <span className="text-[11px] text-zinc-300 font-medium truncate pr-4">{kw.keyword}</span>
-                                    <span className={cn(
-                                      "text-[10px] font-black shrink-0 px-2 py-0.5 rounded-md",
-                                      typeof kw.rank === 'number' && kw.rank <= 10 
-                                        ? "bg-emerald-500/20 text-emerald-400" 
-                                        : "bg-zinc-700 text-zinc-400"
-                                    )}>
-                                      {kw.rank === 101 ? '>100' : kw.rank}
-                                    </span>
-                                  </div>
-                                ))}
+                                {urlKeywords
+                                  .filter(kw => normalizeString(kw.keyword) !== normalizeString(selectedAlertForHistory.keyword))
+                                  .map((kw, idx) => (
+                                    <div 
+                                      key={idx} 
+                                      className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 hover:bg-zinc-800 transition-colors"
+                                    >
+                                      <div className="flex flex-col min-w-0 pr-4">
+                                        <span className="text-[11px] text-zinc-300 font-medium truncate">{kw.keyword}</span>
+                                        {kw.combinacion && (
+                                          <span className="text-[9px] text-zinc-500 truncate font-bold">{kw.combinacion}</span>
+                                        )}
+                                      </div>
+                                      <span className={cn(
+                                        "text-[10px] font-black shrink-0 px-2 py-0.5 rounded-md",
+                                        typeof kw.rank === 'number' && kw.rank <= 10 
+                                          ? "bg-emerald-500/20 text-emerald-400" 
+                                          : "bg-zinc-700 text-zinc-400"
+                                      )}>
+                                        {kw.rank === 101 ? '>100' : kw.rank}
+                                      </span>
+                                    </div>
+                                  ))}
                               </div>
                             ) : !isLoadingUrlKeywords ? (
                               <p className="mt-4 text-[10px] text-zinc-600 italic">No se han encontrado otras keywords posicionando en esta URL.</p>

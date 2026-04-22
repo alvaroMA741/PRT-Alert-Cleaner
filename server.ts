@@ -271,7 +271,8 @@ async function startServer() {
           
           return {
             keyword: t.term || t.name || t.keyword || '',
-            rank: rank
+            rank: rank,
+            combinacion: t.combinacion || t.string || t.location || t.engine || ''
           };
         });
         
