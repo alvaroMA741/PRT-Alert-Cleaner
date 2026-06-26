@@ -27,20 +27,19 @@ async function startServer() {
   const pendingBySession = new Map<string, { csv: string; timestamp: number }>();
 
   app.post('/api/prt/load-from-bookmarklet', (req, res) => {
-    const { csv, timestamp } = req.body;
-    if (!csv) return res.status(400).json({ error: 'Missing csv' });
-    const id = Math.random().toString(36).slice(2, 10);
-    pendingBySession.set(id, { csv, timestamp: timestamp || Date.now() });
-    console.log(`[Bookmarklet] CSV received with id ${id}, ${csv.split('\n').length - 1} rows`);
-    res.json({ ok: true, id });
+    const { csv, timestamp, sessionId } = req.body;
+    if (!csv || !sessionId) return res.status(400).json({ error: 'Missing data' });
+    pendingBySession.set(sessionId, { csv, timestamp: timestamp || Date.now() });
+    console.log(`[Bookmarklet] CSV received for session ${sessionId}, ${csv.split('\n').length - 1} rows`);
+    res.json({ ok: true });
   });
 
   app.get('/api/prt/pending-bookmarklet', (req, res) => {
-    const id = req.query.id as string;
-    if (!id) return res.json({ data: null });
-    const data = pendingBySession.get(id);
+    const sessionId = req.query.session as string;
+    if (!sessionId) return res.json({ data: null });
+    const data = pendingBySession.get(sessionId);
     if (data) {
-      pendingBySession.delete(id);
+      pendingBySession.delete(sessionId);
       res.json({ data });
     } else {
       res.json({ data: null });
