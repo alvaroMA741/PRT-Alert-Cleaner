@@ -66,6 +66,7 @@ export default function App() {
   const [isLoadingUrlKeywords, setIsLoadingUrlKeywords] = useState(false);
   const [showUrlKeywords, setShowUrlKeywords] = useState(false);
   const [pendingBookmarkletFile, setPendingBookmarkletFile] = useState<File | null>(null);
+  const [userName, setUserName] = useState<string>(() => localStorage.getItem('prt_user_name') || '');
   const fileInputReplaceRef = useRef<HTMLInputElement>(null);
   const fileInputAppendRef = useRef<HTMLInputElement>(null);
 
@@ -74,16 +75,17 @@ export default function App() {
     localStorage.setItem('prt_api_key', apiKey);
   }, [apiKey]);
 
-  // Handle bookmarklet import via URL param
+  // Save user name to local storage
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const importId = params.get('import');
-    if (!importId) return;
+    localStorage.setItem('prt_user_name', userName);
+  }, [userName]);
 
-    window.history.replaceState({}, '', window.location.pathname);
-
-    axios.get(`/api/prt/pending-bookmarklet?id=${importId}`)
-      .then(res => {
+  // Polling for bookmarklet data
+  useEffect(() => {
+    if (!userName.trim()) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`/api/prt/pending-bookmarklet?session=${userName.trim().toLowerCase()}`);
         const csv = res.data?.data?.csv;
         if (csv) {
           const file = new File([csv], 'bookmarklet-import.csv', { type: 'text/csv' });
@@ -93,9 +95,12 @@ export default function App() {
             setPendingBookmarkletFile(file);
           }
         }
-      })
-      .catch(() => {});
-  }, []);
+      } catch (e) {
+        // silently ignore
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [alerts.length, userName]);
 
   const handleFile = async (file: File, append: boolean) => {
     if (!file) return;
@@ -1006,6 +1011,17 @@ export default function App() {
                         placeholder="Introduce tu API Key"
                         className="w-full p-3 bg-white border border-emerald-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-emerald-700 mb-1 uppercase tracking-wider">Tu nombre (para el bookmarklet)</label>
+                      <input
+                        type="text"
+                        value={userName}
+                        onChange={(e) => setUserName(e.target.value)}
+                        placeholder="ej: alvaro"
+                        className="w-full p-3 bg-white border border-emerald-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <p className="text-[10px] text-emerald-600 mt-1">Debe coincidir con el nombre en tu bookmarklet</p>
                     </div>
                   </div>
                 </motion.section>
