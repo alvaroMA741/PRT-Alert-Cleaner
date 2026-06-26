@@ -286,6 +286,27 @@ async function startServer() {
     }
   });
 
+  // In-memory store for bookmarklet CSV data
+let pendingBookmarkletData: { csv: string; timestamp: number } | null = null;
+
+app.post('/api/prt/load-from-bookmarklet', (req, res) => {
+  const { csv, timestamp } = req.body;
+  if (!csv) return res.status(400).json({ error: 'No CSV data received' });
+  pendingBookmarkletData = { csv, timestamp: timestamp || Date.now() };
+  console.log(`[Bookmarklet] CSV received, ${csv.split('\n').length - 1} rows`);
+  res.json({ ok: true });
+});
+
+app.get('/api/prt/pending-bookmarklet', (req, res) => {
+  if (pendingBookmarkletData) {
+    const data = pendingBookmarkletData;
+    pendingBookmarkletData = null; // consume it — one-shot
+    res.json({ data });
+  } else {
+    res.json({ data: null });
+  }
+});
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
