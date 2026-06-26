@@ -73,7 +73,9 @@ export default function App() {
     localStorage.setItem('prt_api_key', apiKey);
   }, [apiKey]);
 
-  // Polling for bookmarklet data
+ // Polling for bookmarklet data
+const [pendingBookmarkletFile, setPendingBookmarkletFile] = useState<File | null>(null);
+
 useEffect(() => {
   const interval = setInterval(async () => {
     try {
@@ -81,10 +83,10 @@ useEffect(() => {
       const csv = res.data?.data?.csv;
       if (csv) {
         const file = new File([csv], 'bookmarklet-import.csv', { type: 'text/csv' });
-        handleFile(file, false);
+        setPendingBookmarkletFile(file);
       }
     } catch (e) {
-      // silently ignore — server may not be ready
+      // silently ignore
     }
   }, 3000);
   return () => clearInterval(interval);
@@ -1537,6 +1539,67 @@ useEffect(() => {
           </div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+  {pendingBookmarkletFile && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="relative bg-white rounded-2xl shadow-2xl border border-zinc-200 p-6 w-full max-w-sm flex flex-col gap-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200">
+            <Upload className="text-white w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-zinc-900">Datos recibidos</h3>
+            <p className="text-xs text-zinc-500">Bookmarklet PRT</p>
+          </div>
+        </div>
+
+        <p className="text-sm text-zinc-600">
+          Se han recibido alertas desde el correo de PRT. ¿Cómo quieres cargarlas?
+        </p>
+
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => {
+              handleFile(pendingBookmarkletFile, false);
+              setPendingBookmarkletFile(null);
+            }}
+            className="w-full px-4 py-2.5 bg-zinc-900 text-white rounded-xl text-sm font-bold hover:bg-zinc-800 transition-all"
+          >
+            Reemplazar alertas actuales
+          </button>
+          <button
+            onClick={() => {
+              handleFile(pendingBookmarkletFile, true);
+              setPendingBookmarkletFile(null);
+            }}
+            className="w-full px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all"
+          >
+            Añadir a las actuales
+          </button>
+          <button
+            onClick={() => setPendingBookmarkletFile(null)}
+            className="w-full px-4 py-2 text-zinc-400 text-sm font-medium hover:text-zinc-600 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )}
+</AnimatePresence>
+      
     </div>
   );
 }
