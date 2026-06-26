@@ -9,18 +9,42 @@ async function startServer() {
 
   app.use(express.json());
 
+  // CORS for bookmarklet
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
+    next();
+  });
+
   // API routes FIRST
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
   });
 
-  app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
+  // Bookmarklet endpoints
+  const pendingBySession = new Map<string, { csv: string; timestamp: number }>();
+
+  app.post('/api/prt/load-from-bookmarklet', (req, res) => {
+    const { csv, timestamp, sessionId } = req.body;
+    if (!csv || !sessionId) return res.status(400).json({ error: 'Missing data' });
+    pendingBySession.set(sessionId, { csv, timestamp: timestamp || Date.now() });
+    console.log(`[Bookmarklet] CSV received for session ${sessionId}, ${csv.split('\n').length - 1} rows`);
+    res.json({ ok: true });
+  });
+
+  app.get('/api/prt/pending-bookmarklet', (req, res) => {
+    const sessionId = req.query.session as string;
+    if (!sessionId) return res.json({ data: null });
+    const data = pendingBySession.get(sessionId);
+    if (data) {
+      pendingBySession.delete(sessionId);
+      res.json({ data });
+    } else {
+      res.json({ data: null });
+    }
+  });
 
   app.post('/api/prt/rankings', async (req, res) => {
     const { apiKey, alerts } = req.body;
@@ -36,7 +60,7 @@ async function startServer() {
       };
 
       const urlMap = new Map<string, string>();
-      
+
       // 1. Try to get url -> domain mapping from groups (may fail with 404 on some accounts)
       try {
         const groupsRes = await axios.get('https://api.proranktracker.com/v3/groups', { headers });
@@ -59,7 +83,7 @@ async function startServer() {
         // Based on working test-api.ts: /v3/urls provides a bulk url_terms list
         const urlsRes = await axios.get('https://api.proranktracker.com/v3/urls?per_page=10000', { headers });
         const data = urlsRes.data?.data;
-        
+
         if (data) {
           if (data.url_terms && Array.isArray(data.url_terms)) {
             allTerms = data.url_terms;
@@ -78,7 +102,7 @@ async function startServer() {
         // Fallback to paged results if bulk fails
         let page = 1;
         let hasMore = true;
-        while (hasMore && page <= 10) { // Limit pages for safety
+        while (hasMore && page <= 10) {
           const pagedRes = await axios.get(`https://api.proranktracker.com/v3/urls?page=${page}&per_page=100`, { headers });
           const items = pagedRes.data?.data;
           if (items && Array.isArray(items)) {
@@ -136,25 +160,22 @@ async function startServer() {
 
       const toDate = new Date().toISOString().split('T')[0];
       const fromDate = new Date(Date.now() - range * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      
+
       console.log(`[PRT History] Fetching for termId: ${termId}, urlId: ${urlId} (${range} days)`);
 
       let historyData: any[] = [];
       let success = false;
 
-      // Attempt 1: The documentated URL-based history (MOST RELIABLE)
+      // Attempt 1: The documented URL-based history (MOST RELIABLE)
       if (urlId) {
         try {
-          // Note: using 'from' and 'to' as per user's provided parameters
           const url = `https://api.proranktracker.com/v3/urls/history/${urlId}?from=${fromDate}&to=${toDate}`;
           const resH = await axios.get(url, { headers });
           if (resH.data?.result === 'success' && resH.data?.data?.terms) {
-            // Find the specific term that matches the keyword we're looking for
-            const termMatch = resH.data.data.terms.find((t: any) => 
-              String(t.url_term_id) === String(termId) || 
+            const termMatch = resH.data.data.terms.find((t: any) =>
+              String(t.url_term_id) === String(termId) ||
               String(t.term_id) === String(termId)
             );
-            
             if (termMatch && termMatch.rankhistory) {
               historyData = termMatch.rankhistory.map((h: any) => ({
                 date: h.checked || h.date,
@@ -169,7 +190,7 @@ async function startServer() {
         }
       }
 
-      // Fallback Sequence for older accounts or different configurations
+      // Fallback Sequence
       if (!success) {
         const attemptFetch = async (paramName: string) => {
           try {
@@ -210,7 +231,7 @@ async function startServer() {
       } else {
         console.log(`[PRT History] Found ${finalHistory.length} records`);
       }
-      
+
       res.json({ data: finalHistory });
 
     } catch (error: any) {
@@ -245,27 +266,20 @@ async function startServer() {
 
       const url = `https://api.proranktracker.com/v3/urls/${urlId}`;
       const resU = await axios.get(url, { headers });
-      
+
       if (resU.data?.result !== 'error' && resU.data?.data) {
         const urlData = resU.data.data;
-        const baseUrl = urlData.url || '';
         const terms = Array.isArray(urlData.terms) ? urlData.terms : (urlData.url_terms || []);
-        
+
         const filteredTerms = terms.filter((t: any) => {
           const rawRank = t.rankings?.google?.day ?? t.rank ?? t.position ?? t.yesterdayrank ?? 'NTH';
           let rank = 101;
           if (rawRank !== 'NTH' && rawRank !== null && rawRank !== undefined) {
-             rank = parseInt(rawRank.toString(), 10);
-             if (isNaN(rank)) rank = 101;
+            rank = parseInt(rawRank.toString(), 10);
+            if (isNaN(rank)) rank = 101;
           }
-
-          // Si el rank es 101 (>100), PRT no asocia una URL real, por lo que las ignoramos
           if (rank >= 101) return false;
-
-          // Si no hay matchedurl, PRT a veces devuelve la URL base del dominio por defecto, 
-          // lo cual falsea la asociación. Solo aceptamos términos con una URL de destino explícita.
           if (!t.matchedurl) return false;
-
           return normalizeUrl(t.matchedurl) === normTarget;
         });
 
@@ -273,47 +287,26 @@ async function startServer() {
           const rawRank = t.rankings?.google?.day ?? t.rank ?? t.position ?? t.yesterdayrank ?? 'NTH';
           let rank = 101;
           if (rawRank !== 'NTH' && rawRank !== null && rawRank !== undefined) {
-             rank = parseInt(rawRank.toString(), 10);
-             if (isNaN(rank)) rank = 101;
+            rank = parseInt(rawRank.toString(), 10);
+            if (isNaN(rank)) rank = 101;
           }
-          
           return {
             keyword: t.term || t.name || t.keyword || '',
             rank: rank,
             combinacion: t.combinacion || t.string || t.location || t.engine || ''
           };
         });
-        
+
         res.json({ data: mappedTerms });
       } else {
         res.json({ data: [] });
       }
+
     } catch (error: any) {
       console.error('[PRT URL Keywords] Fatal Error:', error.response?.data || error.message);
       res.status(error.response?.status || 500).json({ error: 'Failed to fetch URL keywords' });
     }
   });
-
-  // In-memory store for bookmarklet CSV data
-let pendingBookmarkletData: { csv: string; timestamp: number } | null = null;
-
-app.post('/api/prt/load-from-bookmarklet', (req, res) => {
-  const { csv, timestamp } = req.body;
-  if (!csv) return res.status(400).json({ error: 'No CSV data received' });
-  pendingBookmarkletData = { csv, timestamp: timestamp || Date.now() };
-  console.log(`[Bookmarklet] CSV received, ${csv.split('\n').length - 1} rows`);
-  res.json({ ok: true });
-});
-
-app.get('/api/prt/pending-bookmarklet', (req, res) => {
-  if (pendingBookmarkletData) {
-    const data = pendingBookmarkletData;
-    pendingBookmarkletData = null; // consume it — one-shot
-    res.json({ data });
-  } else {
-    res.json({ data: null });
-  }
-});
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
