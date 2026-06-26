@@ -46,8 +46,8 @@ function cn(...inputs: ClassValue[]) {
 const normalizeString = (str: string) => {
   if (!str) return "";
   return str.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
-    .replace(/[^a-z0-9]/g, ""); // remove spaces and special chars
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
 };
 
 export default function App() {
@@ -65,36 +65,44 @@ export default function App() {
   const [urlKeywords, setUrlKeywords] = useState<{ keyword: string; rank: number | string; combinacion?: string }[]>([]);
   const [isLoadingUrlKeywords, setIsLoadingUrlKeywords] = useState(false);
   const [showUrlKeywords, setShowUrlKeywords] = useState(false);
+  const [pendingBookmarkletFile, setPendingBookmarkletFile] = useState<File | null>(null);
   const fileInputReplaceRef = useRef<HTMLInputElement>(null);
   const fileInputAppendRef = useRef<HTMLInputElement>(null);
+
+  // Session ID for bookmarklet isolation between users
+  const [sessionId] = useState(() => {
+    const existing = localStorage.getItem('prt_session_id');
+    if (existing) return existing;
+    const id = Math.random().toString(36).slice(2);
+    localStorage.setItem('prt_session_id', id);
+    return id;
+  });
 
   // Save API key to local storage
   useEffect(() => {
     localStorage.setItem('prt_api_key', apiKey);
   }, [apiKey]);
 
- // Polling for bookmarklet data
-const [pendingBookmarkletFile, setPendingBookmarkletFile] = useState<File | null>(null);
-
-useEffect(() => {
-  const interval = setInterval(async () => {
-    try {
-      const res = await axios.get('/api/prt/pending-bookmarklet');
-      const csv = res.data?.data?.csv;
-      if (csv) {
-        const file = new File([csv], 'bookmarklet-import.csv', { type: 'text/csv' });
-        if (alerts.length === 0) {
-          handleFile(file, false);
-        } else {
-          setPendingBookmarkletFile(file);
+  // Polling for bookmarklet data
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`/api/prt/pending-bookmarklet?session=${sessionId}`);
+        const csv = res.data?.data?.csv;
+        if (csv) {
+          const file = new File([csv], 'bookmarklet-import.csv', { type: 'text/csv' });
+          if (alerts.length === 0) {
+            handleFile(file, false);
+          } else {
+            setPendingBookmarkletFile(file);
+          }
         }
+      } catch (e) {
+        // silently ignore
       }
-    } catch (e) {
-      // silently ignore
-    }
-  }, 3000);
-  return () => clearInterval(interval);
-}, [alerts.length]);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [alerts.length, sessionId]);
 
   const handleFile = async (file: File, append: boolean) => {
     if (!file) return;
@@ -159,7 +167,6 @@ useEffect(() => {
           const vIdx = headerRow.findIndex(h => h.includes('volumen') || h.includes('volume'));
           if (vIdx !== -1) volumenIdx = vIdx; else volumenIdx = -1;
 
-          // Fallbacks for missing headers based on known order
           if (urlIdx === -1 && combinacionIdx !== -1 && rankIdx !== -1 && rankIdx > combinacionIdx + 1) {
             urlIdx = combinacionIdx + 1;
           }
@@ -254,20 +261,16 @@ useEffect(() => {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             
-            // Group items by their vertical position (y-coordinate) to reconstruct lines
             const items = textContent.items as any[];
             const lines: { [key: number]: any[] } = {};
             items.forEach(item => {
-              // Group items within 4px vertically to handle slight misalignments
               const y = Math.round(item.transform[5] / 4) * 4;
               if (!lines[y]) lines[y] = [];
               lines[y].push(item);
             });
             
-            // Sort lines by y descending (top to bottom)
             const sortedY = Object.keys(lines).map(Number).sort((a, b) => b - a);
             const pageLines = sortedY.map(y => {
-              // Sort items by x coordinate (left to right)
               const sortedItems = lines[y].sort((a, b) => a.transform[4] - b.transform[4]);
               
               let lineStr = '';
@@ -278,11 +281,8 @@ useEffect(() => {
                 const x = item.transform[4];
                 let str = item.str;
                 
-                // Fix common PDF ligatures (fi, fl, ff, etc.) that often extract as special characters
                 if (str) {
-                  // Normalize standard unicode ligatures
                   str = str.normalize('NFKC');
-                  // Explicit fallbacks for common ligatures
                   str = str.replace(/\uFB00/g, 'ff')
                            .replace(/\uFB01/g, 'fi')
                            .replace(/\uFB02/g, 'fl')
@@ -292,7 +292,6 @@ useEffect(() => {
                 
                 if (lastX !== -1) {
                   const gap = x - (lastX + lastWidth);
-                  // If there's a visual gap > 10px, it's likely a new column
                   if (gap > 10) {
                     lineStr += '\t';
                   } else if (gap > 4 && !lineStr.endsWith(' ') && !str.startsWith(' ')) {
@@ -323,8 +322,6 @@ useEffect(() => {
           pagesText.forEach((line, index) => {
             if (!line) return;
 
-            // Match the 5 or 6-column format: Term | [URL] | Rank | Day | Week | Month
-            // The URL might be missing if the term is not ranking.
             const rankPattern = /([0-9]+|101\s*\+|>100|-|N\/A)/i;
             const volumePattern = /([0-9,.]+[KkMm]?|-|N\/A)/i;
             
@@ -356,7 +353,6 @@ useEffect(() => {
               const weekStr = rowMatch[4].trim();
               const monthStr = rowMatch[5].trim();
               
-              // Check if the last word of the keywordRaw is actually a URL
               let keyword = keywordRaw;
               let url = '';
               
@@ -394,7 +390,6 @@ useEffect(() => {
                     (lastWord.match(/\//g) || []).length > 1 ||
                     lastWord === '-' ||
                     lastWord.toUpperCase() === 'N/A' ||
-                    // Catch truncated URLs that contain a slash and hyphens
                     (lastWord.includes('/') && lastWord.length > 5 && (lastWord.endsWith('-') || (lastWord.match(/-/g) || []).length > 1))
                   ) {
                     url = words.pop() || '';
@@ -403,7 +398,6 @@ useEffect(() => {
                 }
               }
               
-              // Skip header rows
               const isHeader = keyword.toLowerCase() === 'termino' || keyword.toLowerCase() === 'término' || keyword.toLowerCase() === 'tipo';
               if (isHeader) return;
 
@@ -471,7 +465,6 @@ useEffect(() => {
                   fixed = fixed.replace(p, r);
                 });
 
-                // Global fallback: replace any remaining square/PUA with 'fi'
                 fixed = fixed.replace(/[\uFFFD\uE000-\uF8FF]/g, 'fi');
                 
                 return fixed.replace(/\s+/g, ' ').trim();
@@ -495,13 +488,11 @@ useEffect(() => {
               return;
             }
 
-            // If it's not a row, check if it's a domain header
             const domainMatch = line.match(/^(?:Domain:\s*|Sitio:\s*|URL:\s*)?([a-z0-9.-]+\.[a-z]{2,})/i);
             if (domainMatch) {
               currentDomain = domainMatch[1].toLowerCase();
               pendingKeyword = '';
             } else {
-              // Check if it might be a pending keyword (wrapped to next line)
               const trimmedLine = line.trim();
               const lowerLine = trimmedLine.toLowerCase();
               const isHeaderOrFooter = 
@@ -523,7 +514,6 @@ useEffect(() => {
                 
               const isDateOrTime = /^[0-9/: -]+$/.test(trimmedLine);
               
-              // If it has no spaces, starts with http/www, or has domain extensions, it's a URL
               const isUrlOrFragment = 
                 trimmedLine.startsWith('http') || 
                 trimmedLine.startsWith('www.') ||
@@ -533,8 +523,6 @@ useEffect(() => {
               if (!isHeaderOrFooter && !isUrlOrFragment && !isDateOrTime && trimmedLine.length > 0 && trimmedLine.length < 100) {
                 pendingKeyword = pendingKeyword ? pendingKeyword + ' ' + trimmedLine : trimmedLine;
               } else {
-                // If we hit a header, a URL, a date, or a blank line, CLEAR the pending keyword.
-                // It means the sequence of keyword parts was broken.
                 pendingKeyword = '';
               }
             }
@@ -590,7 +578,6 @@ useEffect(() => {
     doc.setTextColor(100);
     doc.text(`Generado el: ${new Date().toLocaleString()}`, 14, 30);
     
-    // Use filtered alerts for export
     const dataToExport = filteredAlerts;
     const total = dataToExport.length;
     const recoveredTop10 = dataToExport.filter(a => a.status === 'recovered-top10').length;
@@ -621,7 +608,7 @@ useEffect(() => {
       alternateRowStyles: { fillColor: [245, 245, 245] },
       styles: { fontSize: 8 },
       columnStyles: {
-        3: { cellWidth: 40 } // Limit width of URL
+        3: { cellWidth: 40 }
       }
     });
 
@@ -654,7 +641,6 @@ useEffect(() => {
 
       let matchCount = 0;
       setAlerts(prev => prev.map(alert => {
-        // Find match by domain and keyword
         const matches = prtData.filter((p: any) => {
           const termName = (p.keyword || p.name || p.term || "");
           const keywordMatch = normalizeString(termName) === normalizeString(alert.keyword);
@@ -796,7 +782,6 @@ useEffect(() => {
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
-    // Auto-reset checkmark after 2 seconds to allow re-copying without double click
     setTimeout(() => {
       setCopiedId(prev => prev === id ? null : prev);
     }, 2000);
@@ -835,20 +820,16 @@ useEffect(() => {
   const fetchHistory = async (prtAlert: PRTAlert, range: number = 30) => {
     const { urlTermId, urlId, status, url } = prtAlert;
     
-    // Reset keywords state
     setUrlKeywords([]);
     setShowUrlKeywords(false);
     
-    // Fetch URL Keywords if urlId exists
     if (urlId) {
       fetchUrlKeywords(urlId, url);
     }
     
-    // Performance optimization as requested: only fetch for KWs still out of Top 10/100
     const isOut = status === 'still-down-top10' || status === 'still-down-top100';
     if (!isOut) {
       console.log(`[PRT History] Skipping history fetch for ${prtAlert.keyword} as it is in Top 10/100.`);
-      // We still select it to show the detail view, but without history chart
       setSelectedAlertForHistory(prtAlert);
       return;
     }
@@ -877,7 +858,6 @@ useEffect(() => {
         console.warn("No real history data returned from PRT for termId:", urlTermId);
       }
 
-      // Map PRT history data to our format
       const mappedHistory = historyData.map((h: any) => ({
         date: h.date,
         rank: h.rank === 'NTH' ? 101 : parseInt(h.rank, 10),
@@ -1345,6 +1325,7 @@ useEffect(() => {
         </div>
       </main>
 
+      {/* History Modal */}
       <AnimatePresence>
         {selectedAlertForHistory && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
@@ -1544,66 +1525,67 @@ useEffect(() => {
         )}
       </AnimatePresence>
 
+      {/* Bookmarklet import modal */}
       <AnimatePresence>
-  {pendingBookmarkletFile && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative bg-white rounded-2xl shadow-2xl border border-zinc-200 p-6 w-full max-w-sm flex flex-col gap-4"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200">
-            <Upload className="text-white w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-zinc-900">Datos recibidos</h3>
-            <p className="text-xs text-zinc-500">Bookmarklet PRT</p>
-          </div>
-        </div>
+        {pendingBookmarkletFile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-white rounded-2xl shadow-2xl border border-zinc-200 p-6 w-full max-w-sm flex flex-col gap-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-200">
+                  <Upload className="text-white w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-zinc-900">Datos recibidos</h3>
+                  <p className="text-xs text-zinc-500">Bookmarklet PRT</p>
+                </div>
+              </div>
 
-        <p className="text-sm text-zinc-600">
-          Se han recibido alertas desde el correo de PRT. ¿Cómo quieres cargarlas?
-        </p>
+              <p className="text-sm text-zinc-600">
+                Se han recibido alertas desde el correo de PRT. ¿Cómo quieres cargarlas?
+              </p>
 
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={() => {
-              handleFile(pendingBookmarkletFile, false);
-              setPendingBookmarkletFile(null);
-            }}
-            className="w-full px-4 py-2.5 bg-zinc-900 text-white rounded-xl text-sm font-bold hover:bg-zinc-800 transition-all"
-          >
-            Reemplazar alertas actuales
-          </button>
-          <button
-            onClick={() => {
-              handleFile(pendingBookmarkletFile, true);
-              setPendingBookmarkletFile(null);
-            }}
-            className="w-full px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all"
-          >
-            Añadir a las actuales
-          </button>
-          <button
-            onClick={() => setPendingBookmarkletFile(null)}
-            className="w-full px-4 py-2 text-zinc-400 text-sm font-medium hover:text-zinc-600 transition-colors"
-          >
-            Cancelar
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  )}
-</AnimatePresence>
-      
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    handleFile(pendingBookmarkletFile, false);
+                    setPendingBookmarkletFile(null);
+                  }}
+                  className="w-full px-4 py-2.5 bg-zinc-900 text-white rounded-xl text-sm font-bold hover:bg-zinc-800 transition-all"
+                >
+                  Reemplazar alertas actuales
+                </button>
+                <button
+                  onClick={() => {
+                    handleFile(pendingBookmarkletFile, true);
+                    setPendingBookmarkletFile(null);
+                  }}
+                  className="w-full px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all"
+                >
+                  Añadir a las actuales
+                </button>
+                <button
+                  onClick={() => setPendingBookmarkletFile(null)}
+                  className="w-full px-4 py-2 text-zinc-400 text-sm font-medium hover:text-zinc-600 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
