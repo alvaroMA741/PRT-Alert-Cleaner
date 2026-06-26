@@ -69,25 +69,21 @@ export default function App() {
   const fileInputReplaceRef = useRef<HTMLInputElement>(null);
   const fileInputAppendRef = useRef<HTMLInputElement>(null);
 
-  // Session ID for bookmarklet isolation between users
-  const [sessionId] = useState(() => {
-    const existing = localStorage.getItem('prt_session_id');
-    if (existing) return existing;
-    const id = Math.random().toString(36).slice(2);
-    localStorage.setItem('prt_session_id', id);
-    return id;
-  });
-
   // Save API key to local storage
   useEffect(() => {
     localStorage.setItem('prt_api_key', apiKey);
   }, [apiKey]);
 
-  // Polling for bookmarklet data
+  // Handle bookmarklet import via URL param
   useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await axios.get(`/api/prt/pending-bookmarklet?session=${sessionId}`);
+    const params = new URLSearchParams(window.location.search);
+    const importId = params.get('import');
+    if (!importId) return;
+
+    window.history.replaceState({}, '', window.location.pathname);
+
+    axios.get(`/api/prt/pending-bookmarklet?id=${importId}`)
+      .then(res => {
         const csv = res.data?.data?.csv;
         if (csv) {
           const file = new File([csv], 'bookmarklet-import.csv', { type: 'text/csv' });
@@ -97,12 +93,9 @@ export default function App() {
             setPendingBookmarkletFile(file);
           }
         }
-      } catch (e) {
-        // silently ignore
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [alerts.length, sessionId]);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleFile = async (file: File, append: boolean) => {
     if (!file) return;
