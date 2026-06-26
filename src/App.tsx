@@ -73,6 +73,23 @@ export default function App() {
     localStorage.setItem('prt_api_key', apiKey);
   }, [apiKey]);
 
+  // Polling for bookmarklet data
+useEffect(() => {
+  const interval = setInterval(async () => {
+    try {
+      const res = await axios.get('/api/prt/pending-bookmarklet');
+      const csv = res.data?.data?.csv;
+      if (csv) {
+        const file = new File([csv], 'bookmarklet-import.csv', { type: 'text/csv' });
+        handleFile(file, false);
+      }
+    } catch (e) {
+      // silently ignore — server may not be ready
+    }
+  }, 3000);
+  return () => clearInterval(interval);
+}, []);
+
   const handleFile = async (file: File, append: boolean) => {
     if (!file) return;
 
