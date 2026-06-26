@@ -83,14 +83,18 @@ useEffect(() => {
       const csv = res.data?.data?.csv;
       if (csv) {
         const file = new File([csv], 'bookmarklet-import.csv', { type: 'text/csv' });
-        setPendingBookmarkletFile(file);
+        if (alerts.length === 0) {
+          handleFile(file, false);
+        } else {
+          setPendingBookmarkletFile(file);
+        }
       }
     } catch (e) {
       // silently ignore
     }
   }, 3000);
   return () => clearInterval(interval);
-}, []);
+}, [alerts.length]);
 
   const handleFile = async (file: File, append: boolean) => {
     if (!file) return;
